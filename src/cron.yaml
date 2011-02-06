@@ -1,0 +1,4 @@
+cron:
+- description: daily summary job
+  url: /task_trigger
+  schedule: every 5 minutes

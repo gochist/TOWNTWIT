@@ -41,6 +41,12 @@ HTTP_METHOD = 'GET'
 SIGNATURE_METHOD = 'PLAINTEXT'
 
 
+def to_utf8(buf):
+    if type(buf) is unicode:
+        return buf.encode('utf8')
+    else:
+        return buf
+
 class Error(RuntimeError):
     """Generic exception class."""
 
@@ -325,7 +331,8 @@ class Request(dict):
         # tell urlencode to deal with sequence values and map them correctly
         # to resulting querystring. for example self["k"] = ["v1", "v2"] will
         # result in 'k=v1&k=v2' and not k=%5B%27v1%27%2C+%27v2%27%5D
-        return urllib.urlencode(self, True).replace('+', '%20')
+        params = dict([(k, to_utf8(v)) for k, v in self.iteritems()])
+        return urllib.urlencode(params, True).replace('+', '%20')
  
     def to_url(self):
         """Serialize as a URL for a GET request."""
@@ -337,7 +344,7 @@ class Request(dict):
             query = base_url[4]
         query = parse_qs(query)
         for k, v in self.items():
-            query.setdefault(k, []).append(v)
+            query.setdefault(k, []).append(to_utf8(v))
         
         try:
             scheme = base_url.scheme
@@ -373,15 +380,15 @@ class Request(dict):
             # 1.0a/9.1.1 states that kvp must be sorted by key, then by value,
             # so we unpack sequence values into multiple items for sorting.
             if hasattr(value, '__iter__'):
-                items.extend((key, item) for item in value)
+                items.extend((key, to_utf8(item)) for item in value)
             else:
-                items.append((key, value))
+                items.append((key, to_utf8(value)))
 
         # Include any query string parameters from the provided URL
         query = urlparse.urlparse(self.url)[4]
         
         url_items = self._split_url_string(query).items()
-        non_oauth_url_items = list([(k, v) for k, v in url_items  if not k.startswith('oauth_')])
+        non_oauth_url_items = list([(k, to_utf8(v)) for k, v in url_items  if not k.startswith('oauth_')])
         items.extend(non_oauth_url_items)
 
         encoded_str = urllib.urlencode(sorted(items))
@@ -433,7 +440,6 @@ class Request(dict):
                 except:
                     raise Error('Unable to parse OAuth parameters from '
                         'Authorization header.')
- 
         # GET or POST query string.
         if query_string:
             query_params = cls._split_url_string(query_string)
@@ -473,7 +479,7 @@ class Request(dict):
         return Request(http_method, http_url, parameters)
  
     @classmethod
-    def from_token_and_callback(cls, token, callback=None, 
+    def from_token_and_callback(cls, token, callback=None,
         http_method=HTTP_METHOD, http_url=None, parameters=None):
 
         if not parameters:
@@ -528,15 +534,8 @@ class Client(httplib2.Http):
         self.token = token
         self.method = SignatureMethod_HMAC_SHA1()
 
-        httplib2.Http.__init__(self, cache=cache, timeout=timeout, 
+        httplib2.Http.__init__(self, cache=cache, timeout=timeout,
             proxy_info=proxy_info)
-
-    def set_callback(self, callback):
-        """Callback URL must be registered when request a 'request token'. 
-        If the client is not web service, callback can be set to 'oob'(out of 
-        band) so that it can follow PIN flow. 
-        """
-        self.callback = callback        
 
     def set_signature_method(self, method):
         if not isinstance(method, SignatureMethod):
@@ -544,14 +543,14 @@ class Client(httplib2.Http):
 
         self.method = method
 
-    def request(self, uri, method="GET", body=None, headers=None, 
+    def request(self, uri, method="GET", body=None, headers=None,
         redirections=httplib2.DEFAULT_MAX_REDIRECTS, connection_type=None):
         DEFAULT_CONTENT_TYPE = 'application/x-www-form-urlencoded'
 
         if not isinstance(headers, dict):
             headers = {}
 
-        is_multipart = method == 'POST' and headers.get('Content-Type', 
+        is_multipart = method == 'POST' and headers.get('Content-Type',
             DEFAULT_CONTENT_TYPE) != DEFAULT_CONTENT_TYPE
 
         if body and method == "POST" and not is_multipart:
@@ -559,14 +558,14 @@ class Client(httplib2.Http):
         else:
             parameters = None
 
-        req = Request.from_consumer_and_token(self.consumer, 
-            token=self.token, http_method=method, http_url=uri, 
+        req = Request.from_consumer_and_token(self.consumer,
+            token=self.token, http_method=method, http_url=uri,
             parameters=parameters)
 
         req.sign_request(self.method, self.consumer, self.token)
 
         if method == "POST":
-            headers['Content-Type'] = headers.get('Content-Type', 
+            headers['Content-Type'] = headers.get('Content-Type',
                 DEFAULT_CONTENT_TYPE)
             if is_multipart:
                 headers.update(req.to_header())
@@ -577,8 +576,8 @@ class Client(httplib2.Http):
         else:
             headers.update(req.to_header())
 
-        return httplib2.Http.request(self, uri, method=method, body=body, 
-            headers=headers, redirections=redirections, 
+        return httplib2.Http.request(self, uri, method=method, body=body,
+            headers=headers, redirections=redirections,
             connection_type=connection_type)
 
 
@@ -604,11 +603,10 @@ class Server(object):
 
     def verify_request(self, request, consumer, token):
         """Verifies an api call and checks all the parameters."""
-
         version = self._get_version(request)
         self._check_signature(request, consumer, token)
         parameters = request.get_nonoauth_parameters()
-        return parameters
+        return dict(request)#parameters
 
     def build_authenticate_header(self, realm=''):
         """Optional support for the authenticate header."""
@@ -673,7 +671,7 @@ class Server(object):
         lapsed = now - timestamp
         if lapsed > self.timestamp_threshold:
             raise Error('Expired timestamp: given %d and now %s has a '
-                'greater difference than threshold %d' % (timestamp, now, 
+                'greater difference than threshold %d' % (timestamp, now,
                     self.timestamp_threshold))
 
 

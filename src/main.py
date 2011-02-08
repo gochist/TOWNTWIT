@@ -1,3 +1,4 @@
+#-*- coding:utf-8 -*-
 import os
 from google.appengine.api import users
 from google.appengine.ext import webapp
@@ -11,10 +12,14 @@ from ext import oauth2
 from ext import ClientBase
 from config import *
 from cgi import parse_qsl
+from urllib import urlencode
+import datetime
 
 # =========
 # Constants
 # =========
+TEMPLATE_ROOT = os.path.join(os.path.dirname(__file__), 'template')
+
 TOWN_CONSUMER = oauth2.Consumer(TOWN_CONSUMER_KEY, TOWN_CONSUMER_SECRET)
 TWIT_CONSUMER = oauth2.Consumer(TWIT_CONSUMER_KEY, TWIT_CONSUMER_SECRET)
 
@@ -52,7 +57,72 @@ def signpost(service, token, uri, body):
 def signget(service, token, uri):
     client = ClientBase(service['consumer'], token)
     return client.request(uri, "GET")
+
+def get_twit_me(token_model):
+    if token_model and token_model.is_access_token:
+        user_id = token_model.token_key.split('-')[0]
+        api = "/1/users/show.json?user_id=" + user_id
+        result = urlfetch.fetch(TWIT_SERVICE['service_provider_url'] + api)
+        if result.status_code == 200:
+            twit_user = json.loads(result.content)
+            return twit_user
+
+def get_town_me(token_model):
+    if token_model and token_model.is_access_token:
+        resp, content = signget(
+            service=TOWN_SERVICE,
+            token=token_model.to_oauth2(),
+            uri=TOWN_SERVICE_PROVIDER_URL + "/1/users/show"
+        )
+        if resp['status'] == '200': 
+            town_user = json.loads(content)
+            if town_user.get('status', 'ok') != 'error':
+                return town_user
+
+
+def post_town_article(user_model, title, message):
+    token_model = user_model.town_token
+    api = TOWN_SERVICE_PROVIDER_URL + "/1/articles/create/" + user_model.town_board_id
+    body_dict = {
+        'title': title,
+        'message': message
+    }
     
+    body = urlencode(body_dict, True)
+    if token_model and token_model.is_access_token:
+        resp, content = signpost(
+            service=TOWN_SERVICE,
+            token=token_model.to_oauth2(),
+            uri=api,
+            body=body
+        )
+        
+        if resp['status'] == '200':
+            result = json.loads(content)
+            if result.get('status', 'ok') != 'error':
+                return result
+
+def get_twit_user_timeline(token_model, count=5, since_id=None):
+    if token_model and token_model.is_access_token:
+        user_id = token_model.token_key.split('-')[0]
+        api = TWIT_SERVICE_PROVIDER_URL + "/1/statuses/user_timeline.json?user_id=" + user_id
+        if count:
+            api = api + "&count=" + str(count)
+        if since_id:
+            api = api + "&since_id=" + str(since_id)
+        result = urlfetch.fetch(api)
+        if result.status_code == 200:
+            user_timeline = json.loads(result.content)
+            return user_timeline
+
+def get_twit_statuses_show(token_model, id):
+    if token_model and token_model.is_access_token:
+        api = TWIT_SERVICE_PROVIDER_URL + "/1/statuses/show/%d.json" % id
+        result = urlfetch.fetch(api)
+        if result.status_code == 200:
+            status = json.loads(result.content)
+            return status
+        
 # ======
 # Models
 # ======
@@ -77,6 +147,8 @@ class UserModel(db.Model):
     user = db.UserProperty(required=True)
     town_token = db.ReferenceProperty(Token, collection_name='town_token')
     twit_token = db.ReferenceProperty(Token, collection_name='twit_token')
+    last_twit_id = db.IntegerProperty()
+    town_board_id = db.StringProperty()
     created = db.DateTimeProperty(auto_now_add=True)
     processed = db.DateTimeProperty(auto_now_add=True)
     
@@ -90,33 +162,29 @@ class UserModel(db.Model):
             model = models[0]
         return model
     
-    def set_twit_token(self, key, secret, is_access):
-        token = Token(
-            token_key=key,
-            token_secret=secret,
-            is_access_token=is_access
-        )
-        token.put()
-        
+    def set_twit_token(self, token):
         if self.twit_token:
             self.twit_token.delete()
-        
+        token.put()
         self.twit_token = token
         self.put()
     
-    def set_town_token(self, key, secret, is_access):
-        token = Token(
-            token_key=key,
-            token_secret=secret,
-            is_access_token=is_access
-        )
-        token.put()
-        
+    def set_town_token(self, token):
         if self.town_token:
             self.town_token.delete()
-        
+        token.put()
         self.town_token = token
         self.put()
+        
+    def update_processed(self):
+        self.processed = datetime.datetime.now()
+        self.put()
+    
+    def have_twit_access_token(self):
+        return self.twit_token and self.twit_token.is_access_token
+    
+    def have_town_access_token(self):
+        return self.town_token and self.town_token.is_access_token
             
 # ========
 # Handlers
@@ -129,36 +197,21 @@ class MainPage(webapp.RequestHandler):
             return
 
         user_model = UserModel.get_or_new(user)
-        town_user = None
-        twit_user = None
-
-        town_token = user_model.town_token
-        twit_token = user_model.twit_token
-        
-        if town_token and town_token.is_access_token:
-            resp, content = signget(
-                TOWN_SERVICE,
-                town_token.to_oauth2(),
-                TOWN_SERVICE['service_provider_url'] + "/1/users/show"
-            )
-            if resp['status'] == '200': 
-                town_user = json.loads(content)
-        
-        if twit_token and twit_token.is_access_token:
-            user_id = twit_token.token_key.split('-')[0]
-            api = "/1/users/show.json?user_id=" + user_id
-            result = urlfetch.fetch(TWIT_SERVICE['service_provider_url'] + api)
-            if result.status_code == 200:
-                twit_user = json.loads(result.content)
-        
+        twit_user = get_twit_me(user_model.twit_token)
+        last_twit = get_twit_statuses_show(
+            token_model=user_model.twit_token,
+            id=user_model.last_twit_id
+        )
+                
         params = {
             'user': user_model,
             'logout_url': users.create_logout_url("/"),
-            'town_user': town_user,
-            'twit_user': twit_user
+            'town_user': get_town_me(user_model.town_token),
+            'twit_user': twit_user,
+            'last_twit': last_twit
         }
-        
-        filepath = os.path.join(os.path.dirname(__file__), 'template/index.tpl')
+
+        filepath = os.path.join(TEMPLATE_ROOT, 'index.tpl')
         self.response.out.write(template.render(filepath, params))
 
 class TownAuthPage(webapp.RequestHandler):
@@ -171,9 +224,11 @@ class TownAuthPage(webapp.RequestHandler):
         result = get_request_token(TOWN_SERVICE) 
         user_model = UserModel.get_or_new(user)
         user_model.set_town_token(
-            key=result['oauth_token'],
-            secret=result['oauth_token_secret'],
-            is_access=False
+            Token(
+                token_key=result['oauth_token'],
+                token_secret=result['oauth_token_secret'],
+                is_access_token=False
+            )
         )
         
         self.redirect(TOWN_AUTHORIZE_URL + "?oauth_token=" + result['oauth_token'])
@@ -205,6 +260,13 @@ class TownCallbackPage(webapp.RequestHandler):
         user_model.town_token.token_secret = result['oauth_token_secret']
         user_model.town_token.is_access_token = True
         user_model.town_token.put()
+        
+        me = get_town_me(user_model.town_token)
+        if me:
+            entrance_year = (me['entrance_year'] % 100)
+            user_model.town_board_id = "board_alumni%02d" % entrance_year 
+            user_model.put()
+        
         self.redirect('/')
 
 class TwitAuthPage(webapp.RequestHandler):
@@ -217,9 +279,11 @@ class TwitAuthPage(webapp.RequestHandler):
         result = get_request_token(TWIT_SERVICE) 
         user_model = UserModel.get_or_new(user)
         user_model.set_twit_token(
-            key=result['oauth_token'],
-            secret=result['oauth_token_secret'],
-            is_access=False
+            Token(
+                token_key=result['oauth_token'],
+                token_secret=result['oauth_token_secret'],
+                is_access_token=False
+            )
         )
         
         self.redirect(TWIT_AUTHORIZE_URL + "?oauth_token=" + result['oauth_token'])
@@ -251,26 +315,50 @@ class TwitCallbackPage(webapp.RequestHandler):
         user_model.twit_token.token_secret = result['oauth_token_secret']
         user_model.twit_token.is_access_token = True
         user_model.twit_token.put()
+        
+        timeline = get_twit_user_timeline(user_model.twit_token, count=1)
+        user_model.last_twit_id = timeline[0]['id']
+        user_model.processed = datetime.datetime.now()
+        user_model.put()
+        
         self.redirect('/')     
 
-class TaskPage(webapp.RequestHandler):
+class TaskPage(webapp.RequestHandler):        
     def post(self):
         user_key = self.request.get('user_key')
         user_model = UserModel.get(user_key)
-        # TODO: twit!
+        twit_timeline = get_twit_user_timeline(
+            token_model=user_model.twit_token,
+            count=5,
+            since_id=user_model.last_twit_id
+        )
+        
+        if twit_timeline:
+            for twit in reversed(twit_timeline):
+                user_model.last_twit_id = twit['id']
+                user_model.put()
 
+                filepath = os.path.join(TEMPLATE_ROOT, 'twit.tpl')
+                params = {'twit':twit}
+                post_town_article(
+                    user_model=user_model,
+                    title=twit['text'].encode('utf8'),
+                    message=template.render(filepath, params)
+                )
         
 class TaskTriggerPage(webapp.RequestHandler):
     def get(self):
-        # TODO: filter, order
         for user in UserModel.all():
-            params = {'user_key':user.key}
-            taskqueue.add(url='/task', params=params)
+            user.update_processed()
+            params = {'user_key':user.key()}
+            taskqueue.add(url='/task', params=params, retry_options=None)
+
             
 # ====
 # WSGI 
 # ====            
-application = webapp.WSGIApplication([
+def main():
+    urls = [
         ('/', MainPage),
         ('/town_auth', TownAuthPage),
         ('/town_callback', TownCallbackPage),
@@ -278,11 +366,8 @@ application = webapp.WSGIApplication([
         ('/twit_callback', TwitCallbackPage),
         ('/task', TaskPage),
         ('/task_trigger', TaskTriggerPage)
-    ],
-    debug=True
-)
-
-def main():
+    ]
+    application = webapp.WSGIApplication(urls, debug=True)
     run_wsgi_app(application)
 
 if __name__ == "__main__":

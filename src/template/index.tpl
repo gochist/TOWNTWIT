@@ -1,9 +1,18 @@
 <html>
-<head></head>
+<head><title>TOWNTWIT</title></head>
 <body>
-	<a href='{{ logout_url }}'>sign out</a>
-	<p>hello, {{ user.user.nickname }}</p>
+<h1>TOWNTWIT</h1>
 
+<p>{{ user.user.nickname }}님, 안녕하세요. </p>
+<p>
+사용자께서 TOWNTWIT에 동네와 트위터 접근 권한을 주시면 
+트위터의 새글을 주기적으로(보통 3분에 한번 꼴로) 체크해서, 
+동네 학번 게시판으로 옮겨드립니다.
+</p>
+
+<p>
+개발중입니다.
+</p>
 <hr/>
 
 {% if town_user %}
@@ -22,7 +31,10 @@
 <img width=40 height=40 src='{{ twit_user.profile_image_url }}'/>
 트위터 인증 성공 - {{ twit_user.name }}({{ twit_user.screen_name }})
 </p>
-<p>{{ twit_user.status.text }}</p>
+	{% if last_twit %}
+	<p>"{{ last_twit.text }}"
+	다음 트윗부터 {{ user.town_board_id }}로 옮깁니다.</p>
+	{% endif %}
 {% else %} 
 <p> <a href='/twit_auth'>트위터 인증하기</a> </p>
 {% endif %}	
@@ -30,7 +42,13 @@
 <hr/>
 
 <p>
-동네-Twit 앱 on GAE/P by 이덕준
+<a href='http://towntwit.appspot.com'>TOWNTWIT</a> on 
+<a href='http://code.google.com/appengine'>GAE</a>/<a href='http://python.org'>P</a> 
+by <a href='mailto:gochist@gmail.com'>이덕준</a>
+</p> 
+
+<p>
+<p><a href='{{ logout_url }}'>로그아웃</a></p>
 </p>
 </body>
 </html>

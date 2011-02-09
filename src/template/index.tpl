@@ -16,12 +16,11 @@
 <hr/>
 
 {% if town_user %}
-<p>
-<img width=40 height=40 src='{{ town_user.img_url }}'/>
-동네 인증 성공 - {{ town_user.name }}({{ town_user.id }})
-</p>
+<p><img width=40 height=40 src='{{ town_user.img_url }}'/>
+동네 인증 성공 - {{ town_user.name }}({{ town_user.id }})</p>
+<p><a href='/towntoken/delete'>동네 인증 취소</a></p>
 {% else %} 
-<p> <a href='/town_auth'>동네 인증하기</a> </p>
+<p><a href='/town_auth'>동네 인증하기</a></p>
 {% endif %}	
 
 <hr/>
@@ -31,6 +30,7 @@
 <img width=40 height=40 src='{{ twit_user.profile_image_url }}'/>
 트위터 인증 성공 - {{ twit_user.name }}({{ twit_user.screen_name }})
 </p>
+<p><a href='/twittoken/delete'>트위터 인증 취소</a></p>
 	{% if last_twit %}
 	<p>"{{ last_twit.text }}"
 	다음 트윗부터 {{ user.town_board_id }}로 옮깁니다.</p>

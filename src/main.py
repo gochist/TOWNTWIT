@@ -275,6 +275,36 @@ class TownCallbackPage(webapp.RequestHandler):
             user_model.put()
         
         self.redirect('/')
+        
+class TownTokenDeletePage(webapp.RequestHandler):
+    def get(self):
+        user = users.get_current_user()
+        if not user:
+            self.redirect(users.create_login_url(self.request.uri))
+            return
+        
+        user_model = UserModel.get_or_new(user)
+        if user_model.town_token:
+            user_model.town_token.delete()
+            user_model.town_token = None
+            user_model.put()            
+        
+        self.redirect('/')
+        
+class TwitTokenDeletePage(webapp.RequestHandler):
+    def get(self):
+        user = users.get_current_user()
+        if not user:
+            self.redirect(users.create_login_url(self.request.uri))
+            return
+        
+        user_model = UserModel.get_or_new(user)
+        if user_model.twit_token:
+            user_model.twit_token.delete()
+            user_model.twit_token = None
+            user_model.put()
+        
+        self.redirect('/')
 
 class TwitAuthPage(webapp.RequestHandler):
     def get(self):
@@ -377,8 +407,10 @@ def main():
         ('/', MainPage),
         ('/town_auth', TownAuthPage),
         ('/town_callback', TownCallbackPage),
+        ('/towntoken/delete', TownTokenDeletePage),
         ('/twit_auth', TwitAuthPage),
         ('/twit_callback', TwitCallbackPage),
+        ('/twittoken/delete', TwitTokenDeletePage),
         ('/task', TaskPage),
         ('/task_trigger', TaskTriggerPage)
     ]

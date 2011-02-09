@@ -116,7 +116,7 @@ def get_twit_user_timeline(token_model, count=5, since_id=None):
             return user_timeline
 
 def get_twit_statuses_show(token_model, id):
-    if token_model and token_model.is_access_token:
+    if id and token_model and token_model.is_access_token:
         api = TWIT_SERVICE_PROVIDER_URL + "/1/statuses/show/%d.json" % id
         result = urlfetch.fetch(api)
         if result.status_code == 200:

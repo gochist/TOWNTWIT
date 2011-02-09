@@ -189,6 +189,12 @@ class UserModel(db.Model):
     
     def have_town_access_token(self):
         return self.town_token and self.town_token.is_access_token
+    
+    def refresh_last_twit_id(self):
+        if self.have_twit_access_token():
+            timeline = get_twit_user_timeline(self.twit_token, 1)
+            if timeline:
+                self.update_last_twit_id(timeline[0]['id'])
             
 # ========
 # Handlers
@@ -356,21 +362,20 @@ class TwitCallbackPage(webapp.RequestHandler):
             )
         )
         
-        timeline = get_twit_user_timeline(user_model.twit_token, count=1)
-        if timeline:
-            last_twit_id = timeline[0]['id']
-        else:
-            last_twit_id = 0
-        
-        user_model.update_last_twit_id(last_twit_id)
+        user_model.refresh_last_twit_id()
         user_model.update_processed()
-        
+
         self.redirect('/')     
 
 class TaskPage(webapp.RequestHandler):        
     def post(self):
         user_key = self.request.get('user_key')
         user_model = UserModel.get(user_key)
+
+        if user_model.last_twit_id == None:
+            user_model.refresh_last_twit_id()
+            return
+        
         twit_timeline = get_twit_user_timeline(
             token_model=user_model.twit_token,
             count=5,

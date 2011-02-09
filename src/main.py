@@ -195,6 +195,13 @@ class UserModel(db.Model):
             timeline = get_twit_user_timeline(self.twit_token, 1)
             if timeline:
                 self.update_last_twit_id(timeline[0]['id'])
+                
+    def queue_to_twit(self):
+        if self.have_twit_access_token() and self.have_town_access_token():
+            self.update_processed()
+            params = {'user_key':self.key()}
+            taskqueue.add(url='/task', params=params, retry_options=None)
+
             
 # ========
 # Handlers
@@ -269,8 +276,8 @@ class TownCallbackPage(webapp.RequestHandler):
         user_model.set_town_token(
             Token(
                   token_key=result['oauth_token'],
-                  token_secret = result['oauth_token_secret'],
-                  is_access_token = True
+                  token_secret=result['oauth_token_secret'],
+                  is_access_token=True
             )
         )
         
@@ -357,8 +364,8 @@ class TwitCallbackPage(webapp.RequestHandler):
         user_model.set_twit_token(
             Token(
                   token_key=result['oauth_token'],
-                  token_secret = result['oauth_token_secret'],
-                  is_access_token = True
+                  token_secret=result['oauth_token_secret'],
+                  is_access_token=True
             )
         )
         
@@ -384,24 +391,31 @@ class TaskPage(webapp.RequestHandler):
         
         if twit_timeline:
             for twit in reversed(twit_timeline):
-                user_model.last_twit_id = twit['id']
-                user_model.put()
+                # backup and update last_twit_id
+                last_twit_id = user_model.last_twit_id
+                user_model.update_last_twit_id(twit['id'])
 
-                filepath = os.path.join(TEMPLATE_ROOT, 'twit.tpl')
-                params = {'twit':twit}
-                post_town_article(
+                # build message from twit
+                message = template.render(
+                    os.path.join(TEMPLATE_ROOT, 'twit.tpl'),
+                    {'twit':twit}
+                )
+                
+                # post twit to town
+                ret = post_town_article(
                     user_model=user_model,
                     title=twit['text'].encode('utf8'),
-                    message=template.render(filepath, params)
+                    message=message
                 )
+                
+                # posting to town failed 
+                if not ret:
+                    user_model.update_last_twit_id(last_twit_id)
         
 class TaskTriggerPage(webapp.RequestHandler):
     def get(self):
         for user in UserModel.all():
-            if user.have_twit_access_token() and user.have_town_access_token():
-                user.update_processed()
-                params = {'user_key':user.key()}
-                taskqueue.add(url='/task', params=params, retry_options=None)
+            user.queue_to_twit()
 
             
 # ====

@@ -175,6 +175,10 @@ class UserModel(db.Model):
         token.put()
         self.town_token = token
         self.put()
+
+    def update_last_twit_id(self, id):
+        self.last_twit_id = id
+        self.put()
         
     def update_processed(self):
         self.processed = datetime.datetime.now()
@@ -256,10 +260,13 @@ class TownCallbackPage(webapp.RequestHandler):
         if resp['status'] != '200':
             raise Exception()
         result = dict(parse_qsl(content))
-        user_model.town_token.token_key = result['oauth_token']
-        user_model.town_token.token_secret = result['oauth_token_secret']
-        user_model.town_token.is_access_token = True
-        user_model.town_token.put()
+        user_model.set_town_token(
+            Token(
+                  token_key=result['oauth_token'],
+                  token_secret = result['oauth_token_secret'],
+                  is_access_token = True
+            )
+        )
         
         me = get_town_me(user_model.town_token)
         if me:
@@ -311,15 +318,22 @@ class TwitCallbackPage(webapp.RequestHandler):
         if resp['status'] != '200':
             raise Exception()
         result = dict(parse_qsl(content))
-        user_model.twit_token.token_key = result['oauth_token']
-        user_model.twit_token.token_secret = result['oauth_token_secret']
-        user_model.twit_token.is_access_token = True
-        user_model.twit_token.put()
+        user_model.set_twit_token(
+            Token(
+                  token_key=result['oauth_token'],
+                  token_secret = result['oauth_token_secret'],
+                  is_access_token = True
+            )
+        )
         
         timeline = get_twit_user_timeline(user_model.twit_token, count=1)
-        user_model.last_twit_id = timeline[0]['id']
-        user_model.processed = datetime.datetime.now()
-        user_model.put()
+        if timeline:
+            last_twit_id = timeline[0]['id']
+        else:
+            last_twit_id = 0
+        
+        user_model.update_last_twit_id(last_twit_id)
+        user_model.update_processed()
         
         self.redirect('/')     
 
@@ -349,9 +363,10 @@ class TaskPage(webapp.RequestHandler):
 class TaskTriggerPage(webapp.RequestHandler):
     def get(self):
         for user in UserModel.all():
-            user.update_processed()
-            params = {'user_key':user.key()}
-            taskqueue.add(url='/task', params=params, retry_options=None)
+            if user.have_twit_access_token() and user.have_town_access_token():
+                user.update_processed()
+                params = {'user_key':user.key()}
+                taskqueue.add(url='/task', params=params, retry_options=None)
 
             
 # ====

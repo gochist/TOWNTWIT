@@ -1,5 +1,6 @@
 #-*- coding:utf-8 -*-
 import os
+import re
 from google.appengine.api import users
 from google.appengine.ext import webapp
 from google.appengine.ext.webapp.util import run_wsgi_app
@@ -122,6 +123,11 @@ def get_twit_statuses_show(token_model, id):
         if result.status_code == 200:
             status = json.loads(result.content)
             return status
+
+def to_town_title(txt):
+    re_mention = re.compile("@(\w)+")
+    txt = re_mention.sub("", txt)
+    return "[via TOWNTWIT] " + (" ".join(txt.strip().split())[:30] or "no title")  
         
 # ======
 # Models
@@ -197,8 +203,8 @@ class UserModel(db.Model):
                 self.update_last_twit_id(timeline[0]['id'])
                 
     def queue_to_twit(self):
+        self.update_processed()
         if self.have_twit_access_token() and self.have_town_access_token():
-            self.update_processed()
             params = {'user_key':self.key()}
             taskqueue.add(url='/task', params=params, retry_options=None)
 
@@ -404,7 +410,7 @@ class TaskPage(webapp.RequestHandler):
                 # post twit to town
                 ret = post_town_article(
                     user_model=user_model,
-                    title=twit['text'].encode('utf8'),
+                    title=to_town_title(twit['text']),
                     message=message
                 )
                 
@@ -414,7 +420,9 @@ class TaskPage(webapp.RequestHandler):
         
 class TaskTriggerPage(webapp.RequestHandler):
     def get(self):
-        for user in UserModel.all():
+        users = UserModel.all().order('-processed')
+        bucket = users.count()/3 + 1
+        for user in users.fetch(bucket):
             user.queue_to_twit()
 
             

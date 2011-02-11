@@ -125,10 +125,17 @@ def get_twit_statuses_show(token_model, id):
             return status
 
 def to_town_title(txt):
-    re_mention = re.compile("@(\w)+")
-    txt = re_mention.sub("", txt)
-    return "[via TOWNTWIT] " + (" ".join(txt.strip().split())[:30] or "no title")  
+    re_mention = re.compile("@(\w+)")
+    txt = re_mention.sub(u"", txt)
+    txt = u"[TWIT] " + (u" ".join(txt.strip().split())[:30] or u"no title")
+    return txt.encode('utf8')
+
+# ======
+# Filter
+# ======  
+template.register_template_library('filters')
         
+
 # ======
 # Models
 # ======
@@ -400,6 +407,10 @@ class TaskPage(webapp.RequestHandler):
                 # backup and update last_twit_id
                 last_twit_id = user_model.last_twit_id
                 user_model.update_last_twit_id(twit['id'])
+                
+                # skip reply
+                if twit['in_reply_to_status_id']:
+                    continue
 
                 # build message from twit
                 message = template.render(
@@ -420,8 +431,8 @@ class TaskPage(webapp.RequestHandler):
         
 class TaskTriggerPage(webapp.RequestHandler):
     def get(self):
-        users = UserModel.all().order('-processed')
-        bucket = users.count()/3 + 1
+        users = UserModel.all().order('processed')
+        bucket = users.count() / 3 + 1
         for user in users.fetch(bucket):
             user.queue_to_twit()
 

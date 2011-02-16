@@ -127,7 +127,7 @@ def get_twit_statuses_show(token_model, id):
 def to_town_title(txt):
     re_mention = re.compile("@(\w+)")
     txt = re_mention.sub(u"", txt)
-    txt = u"[TWIT] " + (u" ".join(txt.strip().split())[:30] or u"no title")
+    txt = u"[TWIT] " + (u" ".join(txt.strip().split())[:25] or u"no title")
     return txt.encode('utf8')
 
 # ======

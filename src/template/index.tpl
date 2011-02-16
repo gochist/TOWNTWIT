@@ -44,7 +44,7 @@
 
 <p>
 <a href='http://towntwit.appspot.com'>TOWNTWIT</a> on 
-<a href='http://code.google.com/appengine'>GAE</a>/<a href='http://python.org'>P</a> 
+<a target='_blank' href='http://code.google.com/appengine'>GAE</a>/<a target='_blank' href='http://python.org'>P</a> 
 by <a href='mailto:gochist@gmail.com'>이덕준</a>
 </p> 
 
